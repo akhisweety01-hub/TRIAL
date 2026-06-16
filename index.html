@@ -558,11 +558,11 @@ body::before{content:'';position:fixed;inset:0;z-index:9999;pointer-events:none;
   <div id="leaderboard-screen" class="screen">
     <div class="score-hero" style="padding:1.5rem 1rem;margin-bottom:.75rem;">
       <div class="result-title" style="font-size:18px;color:var(--accent2);">🏆 GLOBAL STANDINGS</div>
-      <div class="result-msg" style="margin-top:5px;color:var(--text2);">⚡ Real-time Ranking · Top 10 Evaluation Scores</div>
+      <div class="result-msg" style="margin-top:5px;color:var(--text2);">⚡ Real-time Ranking · All Players · Score + Accuracy</div>
     </div>
     <div class="breakdown" style="padding:1rem;">
       <div class="bk-title" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
-        <span>// 🥇 TOP 10 PLAYERS</span>
+        <span>// 🥇 ALL PLAYERS — RANKED</span>
         <span id="leaderboard-status" style="font-size:8px;color:var(--warn);text-transform:uppercase;">LOADING...</span>
       </div>
       <div style="overflow-x:auto;">
@@ -571,8 +571,8 @@ body::before{content:'';position:fixed;inset:0;z-index:9999;pointer-events:none;
             <tr>
               <th style="width:60px;">Rank</th>
               <th>👤 Player</th>
-              <th style="text-align:right;width:100px;">🎯 Points</th>
-              <th style="text-align:right;width:100px;">📊 Accuracy</th>
+              <th style="text-align:right;width:90px;">🏆 Score</th>
+              <th style="text-align:right;width:100px;">🎯 Accuracy</th>
             </tr>
           </thead>
           <tbody id="leaderboard-body"></tbody>
@@ -595,7 +595,8 @@ const TT    = 45;
 const CIRC  = 113.1;
 const SCIRC = 326.73;
 
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbxRXvT8h7Rx-ID9oQd6Wr3lIMgNdCdHN65CQKSzrBGbdZowkYsgkxzH838TaYE8ookQHg/exec';
+// ── UPDATED: Live GAS deployment URL ──
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbzlt4SbZouvCtZFJsPhHSwaeQDc7j67BvVWyzuyUhTfGSd-4cyrvaf0eNl7EcG1tvQPxw/exec';
 
 let userName = '';
 
@@ -738,7 +739,7 @@ function updateTicker(){
   $('jump-un-btn').disabled=(unDoneCount===0);
 }
 
-// START
+// START — unchanged
 function startQuiz(){
   const inputEl=$('username');
   const typedName=inputEl?inputEl.value.trim():'';
@@ -847,87 +848,158 @@ function prevQ(){
   cur--;loadQ();
 }
 
-// SCORE SCREEN
+// ════════════════════════════════════════
+//  SCORE SCREEN
+// ════════════════════════════════════════
 function showScore(){
   clearInterval(timerIv);
   $('live-ticker').style.display='none';$('total-score-btn').style.display='none';
   document.getElementById('score-overlay').classList.remove('show');
+
   let sc=0,wr=0,sk=0;
   for(const a of answers){if(!a.done||a.sel===-1)sk++;else if(a.ok)sc++;else wr++;}
-  const total=qs.length;const pct=Math.round(sc/total*100);
+
+  const total=qs.length;
+
+  // ── 1. ACCURACY CALCULATION ──
+  // Accuracy = correct / total questions × 100, formatted as "85%"
+  const pct=Math.round(sc/total*100);
+  const accuracyStr=pct+'%';
+
   const rank=pct>=90?'🏆 S+':pct>=80?'⭐ A':pct>=70?'🔵 B':pct>=60?'🟡 C':pct>=50?'🟠 D':'🔴 F';
-  $('final-pct').textContent=pct+'%';
+  $('final-pct').textContent=accuracyStr;
   $('s-cor').textContent=sc;$('s-wr').textContent=wr;$('s-sk').textContent=sk;
-  $('bk-pts').textContent=sc;$('bk-acc').textContent=pct+'%';$('bk-rank').textContent=rank;
+  $('bk-pts').textContent=sc;$('bk-acc').textContent=accuracyStr;$('bk-rank').textContent=rank;
+
   let title,msg;
   if(pct>=80){title='⚡ SYSTEM: ELITE';msg='🧠 Neural pathways optimized. ML foundations mastered.';}
   else if(pct>=60){title='✅ SYSTEM: PASS';msg='💪 Solid foundation. Review flagged topics for mastery.';}
   else{title='🔄 SYSTEM: RETRY';msg='📚 Recalibrate and reboot. Review syllabus carefully.';}
   $('result-title').textContent=title;$('result-msg').textContent=msg;
+
   const col=pct>=80?'#00ff88':pct>=60?'#ffaa00':'#ff3366';
   setTimeout(()=>{
     const fg=$('sc-fg');
     fg.style.strokeDashoffset=SCIRC*(1-pct/100);fg.style.stroke=col;
     $('final-pct').style.color=col;
   },200);
+
   $('review-section').style.display='none';
   showScreen('score-screen');
-  saveAndFetchLeaderboard(sc,pct);
+
+  // ── 2. DATA SUBMISSION with accuracy ──
+  saveAndFetchLeaderboard(sc, accuracyStr);
 }
 
-// LEADERBOARD
-function saveAndFetchLeaderboard(score,accuracyPct){
+// ════════════════════════════════════════
+//  LEADERBOARD — SAVE + FETCH
+// ════════════════════════════════════════
+function saveAndFetchLeaderboard(score, accuracyStr){
   const statusEl=$('leaderboard-status');
-  if(statusEl)statusEl.textContent='⚡ SAVING SCORE...';
-  fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({name:userName,score:score})})
-  .then(res=>{if(!res.ok)throw new Error('POST failed:'+res.status);if(statusEl)statusEl.textContent='🔄 FETCHING...';return fetch(GAS_URL+'?action=get');})
-  .then(res=>{if(!res.ok)throw new Error('GET failed:'+res.status);return res.json();})
-  .then(data=>{renderLeaderboard(data,score,accuracyPct);})
-  .catch(err=>{console.error('Leaderboard error:',err);if(statusEl)statusEl.textContent='📡 OFFLINE';displayFallbackLeaderboard(score,accuracyPct);});
+  if(statusEl)statusEl.textContent='⚡ SAVING...';
+
+  // POST with name, score, accuracy — no-cors to avoid preflight
+  fetch(GAS_URL, {
+    method: 'POST',
+    mode: 'no-cors',
+    headers: { 'Content-Type': 'text/plain' },
+    body: JSON.stringify({ name: userName, score: score, accuracy: accuracyStr })
+  })
+  .then(() => {
+    if(statusEl) statusEl.textContent='🔄 FETCHING...';
+    // GET to retrieve all scores
+    return fetch(GAS_URL + '?action=get');
+  })
+  .then(res => {
+    if(!res.ok) throw new Error('GET failed: ' + res.status);
+    return res.json();
+  })
+  .then(data => {
+    renderLeaderboard(data, score, accuracyStr);
+  })
+  .catch(err => {
+    console.error('Leaderboard error:', err);
+    if(statusEl) statusEl.textContent='📡 OFFLINE';
+    displayFallbackLeaderboard(score, accuracyStr);
+  });
 }
 
-function renderLeaderboard(data,currentScore,currentAcc){
-  const tbody=$('leaderboard-body');const statusEl=$('leaderboard-status');
-  if(statusEl)statusEl.textContent='🟢 LIVE';
-  if(!tbody)return;
-  if(!Array.isArray(data)){data=data.data||data.result||[];}
-  data.sort((a,b)=>{const pA=Number(a.score??a.Points??a.Score??0);const pB=Number(b.score??b.Points??b.Score??0);return pB-pA;});
-  const top10=data.slice(0,10);
-  if(top10.length===0){tbody.innerHTML=`<tr><td colspan="4" style="text-align:center;color:var(--text3);padding:1rem">🎯 No records yet — you're first!</td></tr>`;return;}
+// ════════════════════════════════════════
+//  RENDER LEADERBOARD
+// ════════════════════════════════════════
+function parseAccuracy(accStr){
+  // Strip "%" and parse to number for tie-breaking
+  if(typeof accStr === 'number') return accStr;
+  return parseFloat(String(accStr).replace('%','')) || 0;
+}
+
+function renderLeaderboard(data, currentScore, currentAcc){
+  const tbody=$('leaderboard-body');
+  const statusEl=$('leaderboard-status');
+  if(statusEl) statusEl.textContent='🟢 LIVE';
+  if(!tbody) return;
+
+  // Normalise data shape
+  if(!Array.isArray(data)){ data = data.data || data.result || []; }
+
+  // ── 4. SORT: primary = score (desc), secondary = accuracy (desc) ──
+  data.sort((a,b)=>{
+    const sA=Number(a.score ?? a.Points ?? a.Score ?? 0);
+    const sB=Number(b.score ?? b.Points ?? b.Score ?? 0);
+    if(sB !== sA) return sB - sA;                       // higher score first
+    const accA=parseAccuracy(a.accuracy ?? a.Accuracy ?? 0);
+    const accB=parseAccuracy(b.accuracy ?? b.Accuracy ?? 0);
+    return accB - accA;                                  // higher accuracy breaks tie
+  });
+
+  if(data.length === 0){
+    tbody.innerHTML=`<tr><td colspan="4" style="text-align:center;color:var(--text3);padding:1rem">🎯 No records yet — you're first!</td></tr>`;
+    return;
+  }
+
   const medals=['🥇','🥈','🥉'];
-  tbody.innerHTML=top10.map((row,idx)=>{
-    const rank=idx+1;
-    const badgeClass=rank===1?'rank-badge rank-1':rank===2?'rank-badge rank-2':rank===3?'rank-badge rank-3':'rank-badge';
-    const medalEmoji=rank<=3?medals[rank-1]:'';
-    const displayName=(row.name||row.Name||'Anonymous').toString().toUpperCase();
-    const scoreVal=row.score??row.Points??row.Score??0;
-    const accVal=row.accuracy||row.Accuracy||'—';
-    return `<tr>
+
+  // Display ALL players ranked
+  tbody.innerHTML = data.map((row, idx) => {
+    const rank = idx + 1;
+    const badgeClass = rank===1?'rank-badge rank-1':rank===2?'rank-badge rank-2':rank===3?'rank-badge rank-3':'rank-badge';
+    const medalEmoji = rank <= 3 ? medals[rank-1] : '';
+    const displayName = (row.name || row.Name || 'Anonymous').toString().toUpperCase();
+    const scoreVal = row.score ?? row.Points ?? row.Score ?? 0;
+    const accVal   = row.accuracy ?? row.Accuracy ?? '—';
+
+    // Highlight current player's row
+    const isMe = displayName === userName.toUpperCase();
+    const rowStyle = isMe ? 'background:rgba(0,240,255,0.06);' : '';
+
+    return `<tr style="${rowStyle}">
       <td><span class="${badgeClass}">${rank}</span> ${medalEmoji}</td>
-      <td style="font-weight:700;color:var(--text);">${displayName}</td>
-      <td style="text-align:right;font-weight:700;color:var(--accent)}</td>
-      <td style="text-align:right;color:var(--text2);">${accVal}</td>
+      <td style="font-weight:700;color:${isMe?'var(--accent)':'var(--text)'};">${displayName}${isMe?' ◀ YOU':''}</td>
+      <td style="text-align:right;font-weight:700;color:var(--accent3);font-family:var(--font-mono);">${scoreVal}</td>
+      <td style="text-align:right;color:var(--accent2);font-family:var(--font-mono);">${accVal}</td>
     </tr>`;
   }).join('');
 }
 
-function displayFallbackLeaderboard(playerScore,playerAcc){
+function displayFallbackLeaderboard(playerScore, playerAcc){
   const mockData=[
-    {name:userName||'YOU',score:playerScore,accuracy:playerAcc+'%'},
-    {name:'ALPHA_ML',score:48,accuracy:'96%'},
-    {name:'NEURAL_NINJA',score:45,accuracy:'90%'},
-    {name:'DATA_GURU',score:42,accuracy:'84%'},
-    {name:'OVERFITTED_BOT',score:38,accuracy:'76%'},
-    {name:'GRADIENT_DESC',score:35,accuracy:'70%'}
+    {name:userName||'YOU', score:playerScore, accuracy:playerAcc},
+    {name:'ALPHA_ML',       score:48,          accuracy:'96%'},
+    {name:'NEURAL_NINJA',   score:45,          accuracy:'90%'},
+    {name:'DATA_GURU',      score:42,          accuracy:'84%'},
+    {name:'OVERFITTED_BOT', score:38,          accuracy:'76%'},
+    {name:'GRADIENT_DESC',  score:35,          accuracy:'70%'}
   ];
-  renderLeaderboard(mockData,playerScore,playerAcc);
+  renderLeaderboard(mockData, playerScore, playerAcc);
   const statusEl=$('leaderboard-status');
-  if(statusEl)statusEl.textContent='📡 LOCAL STANDINGS';
+  if(statusEl) statusEl.textContent='📡 LOCAL STANDINGS';
 }
 
-function goToLeaderboard(){showScreen('leaderboard-screen');}
+function goToLeaderboard(){ showScreen('leaderboard-screen'); }
 
-// REVIEW
+// ════════════════════════════════════════
+//  REVIEW
+// ════════════════════════════════════════
 function toggleReview(){
   const sec=$('review-section');
   if(sec.style.display==='block'){sec.style.display='none';return;}
@@ -993,14 +1065,12 @@ function restartQuiz(){
   let height=canvas.height=window.innerHeight;
   window.addEventListener('resize',()=>{width=canvas.width=window.innerWidth;height=canvas.height=window.innerHeight;});
 
-  // Neon particles
   const particles=[];
   const maxP=Math.min(70,Math.floor((width*height)/18000));
   const mouse={x:null,y:null,radius:140};
   window.addEventListener('mousemove',e=>{mouse.x=e.clientX;mouse.y=e.clientY;});
   window.addEventListener('mouseleave',()=>{mouse.x=null;mouse.y=null;});
 
-  // Floating orbs
   const orbs=[
     {x:width*.15,y:height*.2,r:140,color:'rgba(0,240,255,0.03)',dx:.15,dy:.1},
     {x:width*.8,y:height*.6,r:180,color:'rgba(180,77,255,0.03)',dx:-.12,dy:.15},
@@ -1012,7 +1082,7 @@ function restartQuiz(){
       this.x=Math.random()*width;this.y=Math.random()*height;
       this.vx=(Math.random()-.5)*.3;this.vy=(Math.random()-.5)*.3;
       this.radius=Math.random()*1.8+.8;
-      this.hue=Math.random()<.5?185:285; // cyan or purple
+      this.hue=Math.random()<.5?185:285;
       this.life=Math.random()*Math.PI*2;
     }
     update(){
@@ -1035,8 +1105,6 @@ function restartQuiz(){
 
   function animate(){
     ctx.clearRect(0,0,width,height);
-
-    // Draw ambient orbs
     for(const orb of orbs){
       orb.x+=orb.dx;orb.y+=orb.dy;
       if(orb.x-orb.r<0||orb.x+orb.r>width)orb.dx*=-1;
@@ -1045,8 +1113,6 @@ function restartQuiz(){
       g.addColorStop(0,orb.color);g.addColorStop(1,'transparent');
       ctx.beginPath();ctx.arc(orb.x,orb.y,orb.r,0,Math.PI*2);ctx.fillStyle=g;ctx.fill();
     }
-
-    // Draw particles and connections
     for(let i=0;i<particles.length;i++){
       const p1=particles[i];p1.update();p1.draw();
       for(let j=i+1;j<particles.length;j++){
